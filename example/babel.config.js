@@ -13,11 +13,6 @@ module.exports = {
         },
       },
     ],
-    [
-      'react-native-reanimated/plugin',
-      {
-        globals: ['__scanFaces'],
-      },
-    ],
+    ['react-native-worklets-core/plugin'],
   ],
 };

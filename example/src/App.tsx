@@ -21,7 +21,6 @@ import {
   scanFaces,
   sortFormatsByResolution,
 } from '@mat2718/vision-camera-face-detector';
-import {runOnJS} from 'react-native-reanimated';
 import {Camera} from 'react-native-vision-camera';
 
 const App = () => {
@@ -94,7 +93,8 @@ const App = () => {
     frame => {
       'worklet';
       const scannedFaces = scanFaces(frame);
-      runOnJS(handleScan)(frame, scannedFaces);
+      console.log(scannedFaces);
+      // runOnJS(handleScan)(frame, scannedFaces);
     },
     [handleScan],
   );
@@ -124,7 +124,7 @@ const App = () => {
   useEffect(() => {
     (async () => {
       const status = await Camera.requestCameraPermission();
-      setHasPermission(status === 'authorized');
+      setHasPermission(status === 'granted');
     })();
   }, []);
 
@@ -170,60 +170,66 @@ const App = () => {
   // Components
   //********************************************************************
 
-  return device != null && hasPermission ? (
+  return (
     <>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        torch={'off'}
-        isActive={isActive}
-        ref={camera}
-        photo={true}
-        frameProcessor={frameProcessor}
-        frameProcessorFps={10}
-        audio={false}
-        format={format}
-      />
-      <View style={styles.crossSectionContainer}>
-        <View style={styles.verticalCrossHair} />
-        <View style={styles.horizontalCrossHair} />
-      </View>
-      <View style={boundingStyle} testID="faceDetectionBoxView">
-        {frameDimensions &&
-          (() => {
-            const mirrored = Platform.OS === 'android' && direction === 'front';
-            const {adjustRect} = faceBoundsAdjustToView(
-              frameDimensions,
-              {
-                width: screenWidth,
-                height: screenHeight,
-              },
-              landscapeMode,
-              50,
-              50,
-            );
-            return faces
-              ? faces.map((i, index) => {
-                  const {left, ...others} = adjustRect(i.bounds);
+      {device != null && hasPermission ? (
+        <>
+          <Camera
+            style={StyleSheet.absoluteFill}
+            device={device}
+            torch={'off'}
+            isActive={isActive}
+            ref={camera}
+            photo={true}
+            frameProcessor={frameProcessor}
+            audio={false}
+            format={format}
+          />
+          <View style={styles.crossSectionContainer}>
+            <View style={styles.verticalCrossHair} />
+            <View style={styles.horizontalCrossHair} />
+          </View>
+          <View style={boundingStyle} testID="faceDetectionBoxView">
+            {frameDimensions &&
+              (() => {
+                const mirrored =
+                  Platform.OS === 'android' && direction === 'front';
+                const {adjustRect} = faceBoundsAdjustToView(
+                  frameDimensions,
+                  {
+                    width: screenWidth,
+                    height: screenHeight,
+                  },
+                  landscapeMode,
+                  50,
+                  50,
+                );
+                return faces
+                  ? faces.map((i, index) => {
+                      const {left, ...others} = adjustRect(i.bounds);
 
-                  return (
-                    <View
-                      key={index}
-                      style={[
-                        styles.boundingBox,
-                        {
-                          ...others,
-                          [mirrored ? 'right' : 'left']: left,
-                        },
-                      ]}
-                    />
-                  );
-                })
-              : undefined;
-          })()}
-      </View>
+                      return (
+                        <View
+                          key={index}
+                          style={[
+                            styles.boundingBox,
+                            {
+                              ...others,
+                              [mirrored ? 'right' : 'left']: left,
+                            },
+                          ]}
+                        />
+                      );
+                    })
+                  : undefined;
+              })()}
+          </View>
+        </>
+      ) : (
+        <></>
+      )}
     </>
-  ) : undefined;
+  );
 };
 
 export default App;

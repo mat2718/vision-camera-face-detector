@@ -8,6 +8,7 @@ import android.graphics.PointF;
 import android.graphics.Rect;
 import android.media.Image;
 import android.util.Log;
+import java.util.Map;
 
 
 import androidx.camera.core.ImageProxy;
@@ -26,13 +27,21 @@ import com.google.mlkit.vision.face.FaceDetector;
 
 
 import com.google.mlkit.vision.face.FaceDetectorOptions;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import com.mrousavy.camera.frameprocessor.Frame;
 import com.mrousavy.camera.frameprocessor.FrameProcessorPlugin;
+import com.mrousavy.camera.types.Orientation;
 
 
 import java.util.List;
 
 
 public class VisionCameraFaceDetectorPlugin extends FrameProcessorPlugin {
+  VisionCameraFaceDetectorPlugin(@Nullable Map<String, Object> options) {
+    super(options);
+  }
+
   private static final String TAG = "VisionCameraFaceDetectorPlugin";
 
   FaceDetectorOptions options =
@@ -121,14 +130,14 @@ public class VisionCameraFaceDetectorPlugin extends FrameProcessorPlugin {
   //   return faceContoursTypesMap;
   // }
 
-  @SuppressLint("NewApi")
+  @Nullable
   @Override
-  public Object callback(ImageProxy frame, Object[] params) {
+  public Object callback(@NonNull Frame frame, @Nullable Map<String, Object> params) {
     @SuppressLint("UnsafeOptInUsageError")
     Image mediaImage = frame.getImage();
 
     if (mediaImage != null) {
-      InputImage image = InputImage.fromMediaImage(mediaImage, frame.getImageInfo().getRotationDegrees());
+      InputImage image = InputImage.fromMediaImage(mediaImage, Orientation.PORTRAIT.toDegrees());
       Task<List<Face>> task = faceDetector.process(image);
       WritableNativeArray array = new WritableNativeArray();
       try {
@@ -165,8 +174,4 @@ public class VisionCameraFaceDetectorPlugin extends FrameProcessorPlugin {
     return null;
   }
 
-
-  VisionCameraFaceDetectorPlugin() {
-    super("scanFaces");
-  }
 }
