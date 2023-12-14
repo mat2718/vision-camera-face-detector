@@ -6,7 +6,7 @@ buildscript {
         }
 
         dependencies {
-            classpath 'com.android.tools.build:gradle:3.5.3'
+            classpath 'com.android.tools.build:gradle'
         }
     }
 }
@@ -47,13 +47,14 @@ repositories {
         // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
         url("$rootDir/../node_modules/react-native/android")
     }
+    
     google()
     jcenter()
 }
 
 dependencies {
     //noinspection GradleDynamicVersion
-    implementation "com.facebook.react:react-native:+"  // From node_modules
+    implementation "com.facebook.react:react-android:+"
     implementation "androidx.annotation:annotation:1.1.0"
     api project(":react-native-vision-camera")
     implementation "androidx.camera:camera-core:1.1.0-alpha08"

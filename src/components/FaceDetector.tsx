@@ -5,35 +5,27 @@ import {
   scanFaces,
   sortFormatsByResolution,
 } from '@mat2718/vision-camera-face-detector';
-import React, {
-  FC,
-  PropsWithChildren,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   Button,
-  Platform,
   StyleProp,
   StyleSheet,
   TouchableOpacity,
-  useWindowDimensions,
   View,
   ViewStyle,
+  useWindowDimensions,
 } from 'react-native';
-import {runOnJS} from 'react-native-reanimated';
+
 import {
   Camera,
   CameraProps,
   Frame,
   PhotoFile,
   TakePhotoOptions,
-  useCameraDevices,
+  useCameraDevice,
   useFrameProcessor,
 } from 'react-native-vision-camera';
+import {useSharedValue} from 'react-native-worklets-core';
 
 type Props = {
   /**
@@ -115,7 +107,7 @@ type Props = {
   cameraProps?: CameraProps;
 };
 
-const FaceDetector: FC<PropsWithChildren<Props>> = ({
+const FaceDetector = ({
   enableBoundingBox,
   boundingBoxMultipleFaces,
   boundingBoxColor,
@@ -135,18 +127,16 @@ const FaceDetector: FC<PropsWithChildren<Props>> = ({
   // torchButton,
   // camera options
   cameraProps,
-}) => {
+}: Props) => {
   //*****************************************************************************************
   //  setting up the state
   //*****************************************************************************************
   // Permissions
   const [hasPermission, setHasPermission] = React.useState(false);
   // camera states
-  const devices = useCameraDevices();
-  const direction: 'front' | 'back' = 'front';
-  const device = devices[direction];
+  const device = useCameraDevice('front');
   const camera = useRef<Camera>(null);
-  const [faces, setFaces] = useState<Face[]>([]);
+  // const [faces, setFaces] = useState<Face[]>([]);
   const {height: screenHeight, width: screenWidth} = useWindowDimensions();
   const landscapeMode = screenWidth > screenHeight;
   const [frameDimensions, setFrameDimensions] = useState<Dimensions>();
@@ -177,24 +167,22 @@ const FaceDetector: FC<PropsWithChildren<Props>> = ({
   );
 
   /* Setting the frame dimensions and faces. */
-  const handleScan = useCallback(
-    (frame: Frame, newFaces: Face[]) => {
-      const isRotated = !landscapeMode;
-      setFrameDimensions(
-        isRotated
-          ? {
-              width: frame.height,
-              height: frame.width,
-            }
-          : {
-              width: frame.width,
-              height: frame.height,
-            },
-      );
-      setFaces(newFaces);
-    },
-    [landscapeMode],
-  );
+  const handleFrameDimensions = Worklets.createRunInJsFn((frame: Frame) => {
+    const isRotated = !landscapeMode;
+    setFrameDimensions(
+      isRotated
+        ? {
+            width: frame.height,
+            height: frame.width,
+          }
+        : {
+            width: frame.width,
+            height: frame.height,
+          },
+    );
+  });
+
+  const faces = useSharedValue<Face[]>([]);
 
   /* Setting the format to the first format in the formats array. */
   useEffect(() => {
@@ -207,9 +195,10 @@ const FaceDetector: FC<PropsWithChildren<Props>> = ({
     frame => {
       'worklet';
       const scannedFaces = scanFaces(frame);
-      runOnJS(handleScan)(frame, scannedFaces);
+      faces.value = scannedFaces;
+      handleFrameDimensions(frame);
     },
-    [handleScan],
+    [faces],
   );
 
   /* Using the useMemo hook to create a style object. */
@@ -227,7 +216,7 @@ const FaceDetector: FC<PropsWithChildren<Props>> = ({
   useEffect(() => {
     (async () => {
       const status = await Camera.requestCameraPermission();
-      setHasPermission(status === 'authorized');
+      setHasPermission(status === 'granted');
     })();
   }, []);
 
@@ -294,127 +283,121 @@ const FaceDetector: FC<PropsWithChildren<Props>> = ({
   //********************************************************************
 
   return device != null && hasPermission ? (
-    <View style={style}>
-      <Camera
-        style={cameraProps?.style ?? StyleSheet.absoluteFill}
-        device={cameraProps?.device ?? device}
-        torch={cameraProps?.torch}
-        isActive={cameraProps?.isActive ?? isActive}
-        ref={camera}
-        photo={cameraProps?.photo}
-        video={cameraProps?.video}
-        audio={cameraProps?.audio}
-        zoom={cameraProps?.zoom}
-        enableZoomGesture={cameraProps?.enableZoomGesture}
-        preset={cameraProps?.preset}
-        format={cameraProps?.format ?? format}
-        fps={cameraProps?.fps ?? 10}
-        hdr={cameraProps?.hdr}
-        lowLightBoost={cameraProps?.lowLightBoost}
-        colorSpace={cameraProps?.colorSpace}
-        videoStabilizationMode={cameraProps?.videoStabilizationMode}
-        enableDepthData={cameraProps?.enableDepthData}
-        enablePortraitEffectsMatteDelivery={
-          cameraProps?.enablePortraitEffectsMatteDelivery
-        }
-        enableHighQualityPhotos={cameraProps?.enableHighQualityPhotos}
-        onError={cameraProps?.onError}
-        onInitialized={cameraProps?.onInitialized}
-        onFrameProcessorPerformanceSuggestionAvailable={
-          cameraProps?.onFrameProcessorPerformanceSuggestionAvailable
-        }
-        frameProcessor={cameraProps?.frameProcessor ?? frameProcessor}
-        frameProcessorFps={cameraProps?.frameProcessorFps ?? 10}
-      />
-      <View style={boundingStyle} testID="faceDetectionBoxView">
-        {frameDimensions &&
-          (() => {
-            if (enableBoundingBox) {
-              const mirrored =
-                Platform.OS === 'android' && direction === 'front';
-              const {adjustRect} = faceBoundsAdjustToView(
-                frameDimensions,
-                {
-                  width: landscapeMode ? screenHeight : screenWidth,
-                  height: landscapeMode ? screenWidth : screenHeight,
-                },
-                landscapeMode,
-                boundingBoxVerticalPadding,
-                boundingBoxHorizontalPadding,
-              );
-              if (boundingBoxMultipleFaces) {
-                /* Returning a view for each face detected. */
-                return faces
-                  ? faces.map((i, index) => {
-                      const {left, ...others} = adjustRect(i.bounds);
+    <>
+      <View style={style}>
+        <Camera
+          style={cameraProps?.style ?? StyleSheet.absoluteFill}
+          device={cameraProps?.device ?? device}
+          torch={cameraProps?.torch}
+          isActive={cameraProps?.isActive ?? isActive}
+          ref={camera}
+          photo={cameraProps?.photo}
+          video={cameraProps?.video}
+          audio={cameraProps?.audio}
+          zoom={cameraProps?.zoom}
+          enableZoomGesture={cameraProps?.enableZoomGesture}
+          format={cameraProps?.format ?? format}
+          fps={cameraProps?.fps ?? 10}
+          lowLightBoost={cameraProps?.lowLightBoost}
+          videoStabilizationMode={cameraProps?.videoStabilizationMode}
+          enableDepthData={cameraProps?.enableDepthData}
+          enablePortraitEffectsMatteDelivery={
+            cameraProps?.enablePortraitEffectsMatteDelivery
+          }
+          enableHighQualityPhotos={cameraProps?.enableHighQualityPhotos}
+          onError={cameraProps?.onError}
+          onInitialized={cameraProps?.onInitialized}
+          frameProcessor={cameraProps?.frameProcessor ?? frameProcessor}
+        />
+        <View style={boundingStyle} testID="faceDetectionBoxView">
+          {frameDimensions &&
+            (() => {
+              if (enableBoundingBox) {
+                const {adjustRect} = faceBoundsAdjustToView(
+                  frameDimensions,
+                  {
+                    width: landscapeMode ? screenHeight : screenWidth,
+                    height: landscapeMode ? screenWidth : screenHeight,
+                  },
+                  landscapeMode,
+                  boundingBoxVerticalPadding,
+                  boundingBoxHorizontalPadding,
+                );
+                if (boundingBoxMultipleFaces) {
+                  /* Returning a view for each face detected. */
+                  return faces
+                    ? faces.value.map((i, index) => {
+                        const {left, ...others} = adjustRect(i.bounds);
 
-                      return (
-                        <View
-                          key={index}
-                          style={[
-                            styles.boundingBox,
-                            {
-                              ...others,
-                              [mirrored ? 'right' : 'left']: left,
-                            },
-                          ]}
-                        />
-                      );
-                    })
-                  : undefined;
-              } else {
-                /* This is checking if there are any faces detected. If there are, it will return the
-                first face detected. If there are no faces detected, it will return undefined. */
-                if (faces && faces.length > 0) {
-                  const {left, ...others} = adjustRect(faces[0].bounds);
-                  return (
-                    <View
-                      style={[
-                        styles.boundingBox,
-                        {
-                          ...others,
-                          left: left,
-                        },
-                      ]}
-                    />
-                  );
+                        return (
+                          <View
+                            key={index}
+                            style={[
+                              styles.boundingBox,
+                              {
+                                ...others,
+                                ['right']: left,
+                              },
+                            ]}
+                          />
+                        );
+                      })
+                    : undefined;
                 } else {
-                  return undefined;
+                  /* This is checking if there are any faces detected. If there are, it will return the
+                first face detected. If there are no faces detected, it will return undefined. */
+                  if (faces && faces.value.length > 0) {
+                    const {left, ...others} = adjustRect(faces.value[0].bounds);
+                    return (
+                      <View
+                        style={[
+                          styles.boundingBox,
+                          {
+                            ...others,
+                            left: left,
+                          },
+                        ]}
+                      />
+                    );
+                  } else {
+                    return undefined;
+                  }
                 }
+              } else {
+                return undefined;
               }
-            } else {
-              return undefined;
-            }
-          })()}
-      </View>
-      {photoCaptureButton || photoSkipButton ? (
-        <View style={styles.fixToText}>
-          {photoCaptureButton ? (
-            <TouchableOpacity onPress={() => attemptPhotoCapture(faces)}>
-              {photoCaptureButton}
-            </TouchableOpacity>
-          ) : (
-            <View style={photoCaptureButtonStyle}>
-              <Button
-                title="Capture"
-                onPress={() => attemptPhotoCapture(faces)}
-              />
-            </View>
-          )}
-          {photoSkipButtonEnabled ? (
-            photoSkipButton ? (
-              <TouchableOpacity onPress={photoSkipOnPress}>
-                {photoSkipButton}
+            })()}
+        </View>
+        {photoCaptureButton || photoSkipButton ? (
+          <View style={styles.fixToText}>
+            {photoCaptureButton ? (
+              <TouchableOpacity
+                onPress={() => attemptPhotoCapture(faces.value)}>
+                {photoCaptureButton}
               </TouchableOpacity>
             ) : (
-              <View style={photoSkipButtonStyle}>
-                <Button title="skip" onPress={photoSkipOnPress} />
+              <View style={photoCaptureButtonStyle}>
+                <Button
+                  title="Capture"
+                  onPress={() => attemptPhotoCapture(faces.value)}
+                />
               </View>
-            )
-          ) : undefined}
-        </View>
-      ) : undefined}
-    </View>
+            )}
+            {photoSkipButtonEnabled ? (
+              photoSkipButton ? (
+                <TouchableOpacity onPress={photoSkipOnPress}>
+                  {photoSkipButton}
+                </TouchableOpacity>
+              ) : (
+                <View style={photoSkipButtonStyle}>
+                  <Button title="skip" onPress={photoSkipOnPress} />
+                </View>
+              )
+            ) : undefined}
+          </View>
+        ) : undefined}
+      </View>
+    </>
   ) : (
     <></>
   );

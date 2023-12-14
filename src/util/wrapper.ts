@@ -1,14 +1,17 @@
-import type {Frame} from 'react-native-vision-camera';
-import type {Face} from '../types/types';
+import {Frame, VisionCameraProxy} from 'react-native-vision-camera';
+import {Face} from '../types/types';
+
+const plugin = VisionCameraProxy.initFrameProcessorPlugin('scanFaces');
 
 /**
- * It takes a frame, and returns an array of faces
- * @param {Frame} frame - The frame to scan for faces.
- * @returns The return value is an array of Face objects.
+ * Scans faces.
  */
-export default function scanFaces(frame: Frame): Face[] {
+const scanFaces = (frame: Frame): Face[] => {
   'worklet';
-  // @ts-ignore
-  // eslint-disable-next-line no-undef
-  return __scanFaces(frame);
-}
+  if (plugin == null) {
+    throw new Error('Failed to load Frame Processor Plugin "scanFaces"!');
+  }
+  return plugin.call(frame) as unknown as Face[];
+};
+
+export default scanFaces;

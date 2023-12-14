@@ -1,7 +1,6 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 
 import {
-  Platform,
   StyleProp,
   StyleSheet,
   useWindowDimensions,
@@ -10,7 +9,7 @@ import {
 } from 'react-native';
 import {
   Frame,
-  useCameraDevices,
+  useCameraDevice,
   useFrameProcessor,
 } from 'react-native-vision-camera';
 
@@ -21,8 +20,8 @@ import {
   scanFaces,
   sortFormatsByResolution,
 } from '@mat2718/vision-camera-face-detector';
-import {runOnJS} from 'react-native-reanimated';
 import {Camera} from 'react-native-vision-camera';
+import {useSharedValue} from 'react-native-worklets-core';
 
 const App = () => {
   //*****************************************************************************************
@@ -31,11 +30,8 @@ const App = () => {
   // Permissions
   const [hasPermission, setHasPermission] = React.useState(false);
   // camera states
-  const devices = useCameraDevices();
-  let direction: 'front' | 'back' = 'back';
-  const device = devices[direction];
+  const device = useCameraDevice('front');
   const camera = useRef<Camera>(null);
-  const [faces, setFaces] = useState<Face[]>([]);
   const {height: screenHeight, width: screenWidth} = useWindowDimensions();
   const landscapeMode = screenWidth > screenHeight;
   const [frameDimensions, setFrameDimensions] = useState<Dimensions>();
@@ -64,24 +60,22 @@ const App = () => {
   );
 
   /* Setting the frame dimensions and faces. */
-  const handleScan = useCallback(
-    (frame: Frame, newFaces: Face[]) => {
-      const isRotated = !landscapeMode;
-      setFrameDimensions(
-        isRotated
-          ? {
-              width: frame.height,
-              height: frame.width,
-            }
-          : {
-              width: frame.width,
-              height: frame.height,
-            },
-      );
-      setFaces(newFaces);
-    },
-    [landscapeMode],
-  );
+  const handleFrameDimensions = Worklets.createRunInJsFn((frame: Frame) => {
+    const isRotated = !landscapeMode;
+    setFrameDimensions(
+      isRotated
+        ? {
+            width: frame.height,
+            height: frame.width,
+          }
+        : {
+            width: frame.width,
+            height: frame.height,
+          },
+    );
+  });
+
+  const faces = useSharedValue<Face[]>([]);
 
   /* Setting the format to the first format in the formats array. */
   useEffect(() => {
@@ -94,9 +88,10 @@ const App = () => {
     frame => {
       'worklet';
       const scannedFaces = scanFaces(frame);
-      runOnJS(handleScan)(frame, scannedFaces);
+      faces.value = scannedFaces;
+      handleFrameDimensions(frame);
     },
-    [handleScan],
+    [faces, handleFrameDimensions],
   );
 
   // const frameProcessor = useFrameProcessor(frame => {
@@ -124,7 +119,7 @@ const App = () => {
   useEffect(() => {
     (async () => {
       const status = await Camera.requestCameraPermission();
-      setHasPermission(status === 'authorized');
+      setHasPermission(status === 'granted');
     })();
   }, []);
 
@@ -170,60 +165,64 @@ const App = () => {
   // Components
   //********************************************************************
 
-  return device != null && hasPermission ? (
+  return (
     <>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        torch={'off'}
-        isActive={isActive}
-        ref={camera}
-        photo={true}
-        frameProcessor={frameProcessor}
-        frameProcessorFps={10}
-        audio={false}
-        format={format}
-      />
-      <View style={styles.crossSectionContainer}>
-        <View style={styles.verticalCrossHair} />
-        <View style={styles.horizontalCrossHair} />
-      </View>
-      <View style={boundingStyle} testID="faceDetectionBoxView">
-        {frameDimensions &&
-          (() => {
-            const mirrored = Platform.OS === 'android' && direction === 'front';
-            const {adjustRect} = faceBoundsAdjustToView(
-              frameDimensions,
-              {
-                width: screenWidth,
-                height: screenHeight,
-              },
-              landscapeMode,
-              50,
-              50,
-            );
-            return faces
-              ? faces.map((i, index) => {
-                  const {left, ...others} = adjustRect(i.bounds);
+      {device != null && hasPermission ? (
+        <>
+          <Camera
+            style={StyleSheet.absoluteFill}
+            device={device}
+            torch={'off'}
+            isActive={isActive}
+            ref={camera}
+            photo={true}
+            frameProcessor={frameProcessor}
+            audio={false}
+            format={format}
+          />
+          <View style={styles.crossSectionContainer}>
+            <View style={styles.verticalCrossHair} />
+            <View style={styles.horizontalCrossHair} />
+          </View>
+          <View style={boundingStyle} testID="faceDetectionBoxView">
+            {frameDimensions &&
+              (() => {
+                const {adjustRect} = faceBoundsAdjustToView(
+                  frameDimensions,
+                  {
+                    width: screenWidth,
+                    height: screenHeight,
+                  },
+                  landscapeMode,
+                  50,
+                  50,
+                );
+                return faces
+                  ? faces.value.map((i, index) => {
+                      const {left, ...others} = adjustRect(i.bounds);
 
-                  return (
-                    <View
-                      key={index}
-                      style={[
-                        styles.boundingBox,
-                        {
-                          ...others,
-                          [mirrored ? 'right' : 'left']: left,
-                        },
-                      ]}
-                    />
-                  );
-                })
-              : undefined;
-          })()}
-      </View>
+                      return (
+                        <View
+                          key={index}
+                          style={[
+                            styles.boundingBox,
+                            {
+                              ...others,
+                              ['right']: left,
+                            },
+                          ]}
+                        />
+                      );
+                    })
+                  : undefined;
+              })()}
+          </View>
+        </>
+      ) : (
+        <></>
+      )}
     </>
-  ) : undefined;
+  );
 };
 
 export default App;
