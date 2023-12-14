@@ -9,9 +9,11 @@ import android.graphics.Rect;
 import android.media.Image;
 import android.util.Log;
 import java.util.Map;
-
+import java.util.List;
 
 import androidx.camera.core.ImageProxy;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.WritableMap;
@@ -33,10 +35,6 @@ import com.mrousavy.camera.frameprocessor.Frame;
 import com.mrousavy.camera.frameprocessor.FrameProcessorPlugin;
 import com.mrousavy.camera.types.Orientation;
 
-
-import java.util.List;
-
-
 public class VisionCameraFaceDetectorPlugin extends FrameProcessorPlugin {
   VisionCameraFaceDetectorPlugin(@Nullable Map<String, Object> options) {
     super(options);
@@ -44,7 +42,7 @@ public class VisionCameraFaceDetectorPlugin extends FrameProcessorPlugin {
 
   private static final String TAG = "VisionCameraFaceDetectorPlugin";
 
-  FaceDetectorOptions options =
+  FaceDetectorOptions setup =
     new FaceDetectorOptions.Builder()
       .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
       // .setContourMode(FaceDetectorOptions.CONTOUR_MODE_ALL)
@@ -53,7 +51,7 @@ public class VisionCameraFaceDetectorPlugin extends FrameProcessorPlugin {
       .setMinFaceSize(0.15f)
       .build();
 
-  FaceDetector faceDetector = FaceDetection.getClient(options);
+  FaceDetector faceDetector = FaceDetection.getClient(setup);
 
   private WritableMap processBoundingBox(Rect boundingBox) {
     WritableMap bounds = Arguments.createMap();

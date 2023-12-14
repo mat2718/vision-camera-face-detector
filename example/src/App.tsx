@@ -1,7 +1,6 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 
 import {
-  Platform,
   StyleProp,
   StyleSheet,
   useWindowDimensions,
@@ -10,7 +9,7 @@ import {
 } from 'react-native';
 import {
   Frame,
-  useCameraDevices,
+  useCameraDevice,
   useFrameProcessor,
 } from 'react-native-vision-camera';
 
@@ -22,6 +21,7 @@ import {
   sortFormatsByResolution,
 } from '@mat2718/vision-camera-face-detector';
 import {Camera} from 'react-native-vision-camera';
+import {useSharedValue} from 'react-native-worklets-core';
 
 const App = () => {
   //*****************************************************************************************
@@ -30,11 +30,8 @@ const App = () => {
   // Permissions
   const [hasPermission, setHasPermission] = React.useState(false);
   // camera states
-  const devices = useCameraDevices();
-  let direction: 'front' | 'back' = 'back';
-  const device = devices[direction];
+  const device = useCameraDevice('front');
   const camera = useRef<Camera>(null);
-  const [faces, setFaces] = useState<Face[]>([]);
   const {height: screenHeight, width: screenWidth} = useWindowDimensions();
   const landscapeMode = screenWidth > screenHeight;
   const [frameDimensions, setFrameDimensions] = useState<Dimensions>();
@@ -63,24 +60,22 @@ const App = () => {
   );
 
   /* Setting the frame dimensions and faces. */
-  const handleScan = useCallback(
-    (frame: Frame, newFaces: Face[]) => {
-      const isRotated = !landscapeMode;
-      setFrameDimensions(
-        isRotated
-          ? {
-              width: frame.height,
-              height: frame.width,
-            }
-          : {
-              width: frame.width,
-              height: frame.height,
-            },
-      );
-      setFaces(newFaces);
-    },
-    [landscapeMode],
-  );
+  const handleFrameDimensions = Worklets.createRunInJsFn((frame: Frame) => {
+    const isRotated = !landscapeMode;
+    setFrameDimensions(
+      isRotated
+        ? {
+            width: frame.height,
+            height: frame.width,
+          }
+        : {
+            width: frame.width,
+            height: frame.height,
+          },
+    );
+  });
+
+  const faces = useSharedValue<Face[]>([]);
 
   /* Setting the format to the first format in the formats array. */
   useEffect(() => {
@@ -93,10 +88,10 @@ const App = () => {
     frame => {
       'worklet';
       const scannedFaces = scanFaces(frame);
-      console.log(scannedFaces);
-      // runOnJS(handleScan)(frame, scannedFaces);
+      faces.value = scannedFaces;
+      handleFrameDimensions(frame);
     },
-    [handleScan],
+    [faces, handleFrameDimensions],
   );
 
   // const frameProcessor = useFrameProcessor(frame => {
@@ -192,8 +187,6 @@ const App = () => {
           <View style={boundingStyle} testID="faceDetectionBoxView">
             {frameDimensions &&
               (() => {
-                const mirrored =
-                  Platform.OS === 'android' && direction === 'front';
                 const {adjustRect} = faceBoundsAdjustToView(
                   frameDimensions,
                   {
@@ -205,7 +198,7 @@ const App = () => {
                   50,
                 );
                 return faces
-                  ? faces.map((i, index) => {
+                  ? faces.value.map((i, index) => {
                       const {left, ...others} = adjustRect(i.bounds);
 
                       return (
@@ -215,7 +208,7 @@ const App = () => {
                             styles.boundingBox,
                             {
                               ...others,
-                              [mirrored ? 'right' : 'left']: left,
+                              ['right']: left,
                             },
                           ]}
                         />
